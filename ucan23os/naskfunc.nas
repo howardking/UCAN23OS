@@ -15,11 +15,18 @@
 		GLOBAL  _load_cr0, _store_cr0
 		GLOBAL	_asm_inthandler20, _asm_inthandler21
 		GLOBAL 	_asm_inthandler27, _asm_inthandler2c
+		GLOBAL	_asm_inthandler0c, _asm_inthandler0d
+		GLOBAL	_asm_end_app
 		GLOBAL	_memtest_sub, _load_tr
 		GLOBAL	_taskswitch4, _taskswitch3
-		GLOBAL	_farjmp
+		GLOBAL	_asm_cons_putchar
+		GLOBAL	_farjmp, _farcall
+		GLOBAL	_asm_hrb_api, _start_app
+		EXTERN	_inthandler0d, _inthandler0c
 		EXTERN	_inthandler20, _inthandler21
 		EXTERN  _inthandler2c, _inthandler27
+		EXTERN	_hrb_api
+
 
 [SECTION .text]
 
@@ -120,66 +127,107 @@ _asm_inthandler20:
 		PUSH	ES
 		PUSH	DS
 		PUSHAD
-		MOV		EAX, ESP
+		MOV		EAX,ESP
 		PUSH	EAX
-		MOV		AX, SS
-		MOV		DS, AX
-		MOV 	ES, AX
+		MOV		AX,SS
+		MOV		DS,AX
+		MOV		ES,AX
 		CALL	_inthandler20
 		POP		EAX
 		POPAD
 		POP		DS
 		POP		ES
 		IRETD
-		
+
 _asm_inthandler21:
 		PUSH	ES
 		PUSH	DS
 		PUSHAD
-		MOV		EAX, ESP
-		PUSH 	EAX
-		MOV		AX, SS
-		MOV		DS, AX
-		MOV		ES,	AX
+		MOV		EAX,ESP
+		PUSH	EAX
+		MOV		AX,SS
+		MOV		DS,AX
+		MOV		ES,AX
 		CALL	_inthandler21
 		POP		EAX
 		POPAD
 		POP		DS
 		POP		ES
 		IRETD
-		
+
 _asm_inthandler27:
 		PUSH	ES
 		PUSH	DS
 		PUSHAD
-		MOV		EAX, ESP	
+		MOV		EAX,ESP
 		PUSH	EAX
-		MOV		AX, SS
-		MOV		DS, AX
-		MOV		ES, AX
+		MOV		AX,SS
+		MOV		DS,AX
+		MOV		ES,AX
 		CALL	_inthandler27
 		POP		EAX
 		POPAD
 		POP		DS
 		POP		ES
 		IRETD
-		
+
 _asm_inthandler2c:
 		PUSH	ES
 		PUSH	DS
 		PUSHAD
-		MOV		EAX, ESP
+		MOV		EAX,ESP
 		PUSH	EAX
-		MOV		AX, SS
-		MOV		DS, AX
-		MOV		ES, AX
+		MOV		AX,SS
+		MOV		DS,AX
+		MOV		ES,AX
 		CALL	_inthandler2c
 		POP		EAX
 		POPAD
 		POP		DS
 		POP		ES
 		IRETD
+
+_asm_inthandler0c:
+		STI
+		PUSH	ES
+		PUSH	DS
+		PUSHAD
+		MOV		EAX,ESP
+		PUSH	EAX
+		MOV		AX,SS
+		MOV		DS,AX
+		MOV		ES,AX
+		CALL	_inthandler0c
+		CMP		EAX,0
+		JNE		_asm_end_app
+		POP		EAX
+		POPAD
+		POP		DS
+		POP		ES
+		ADD		ESP,4			; 在INT 0x0c中也需要这句
+		IRETD
+
 		
+_asm_inthandler0d:
+		STI
+		PUSH	ES
+		PUSH	DS
+		PUSHAD
+		MOV		EAX,ESP
+		PUSH	EAX
+		MOV		AX,SS
+		MOV		DS,AX
+		MOV		ES,AX
+		CALL	_inthandler0d
+		CMP		EAX,0		
+		JNE		_asm_end_app		
+		POP		EAX
+		POPAD
+		POP		DS
+		POP		ES
+		ADD		ESP,4			; INT 0x0d 需要
+		IRETD	
+
 _memtest_sub:		; unsigned int memtest_sub(unsigned int start, unsigned int end);
 		PUSH	EDI
 		PUSH	ESI
@@ -224,3 +272,56 @@ _taskswitch3:			;void taskswitch3(void);
 _farjmp:				;void farjmp(int eip, int cs);
 		JMP		FAR [ESP+4]
 		RET
+		
+_farcall:		; void farcall(int eip, int cs);
+		CALL	FAR	[ESP+4]				; eip, cs
+		RET
+		
+_asm_hrb_api:
+		STI
+		PUSH	DS
+		PUSH	ES
+		PUSHAD		; 用于保存的PUSH
+		PUSHAD		; 用于向hrb_api传值的PUSH
+		MOV		AX,SS
+		MOV		DS,AX		; 将操作系统用短地址存入DS和ES
+		MOV		ES,AX
+		CALL	_hrb_api
+		CMP		EAX,0		; 当EAX不为0时程序结束
+		JNE		_asm_end_app
+		ADD		ESP,32
+		POPAD
+		POP		ES
+		POP		DS
+		IRETD
+_asm_end_app:
+;	EAX为tss.esp0的地址
+		MOV		ESP,[EAX]
+		MOV		DWORD [EAX+4],0
+		POPAD
+		RET					; cmd_app返回
+		
+
+_start_app:		; void start_app(int eip, int cs, int esp, int ds, int *tss_esp0);
+		PUSHAD		; 将32位寄存器全部保留下来
+		MOV		EAX,[ESP+36]	; 应用程序用EIP
+		MOV		ECX,[ESP+40]	; 应用程序用CS
+		MOV		EDX,[ESP+44]	; 应用程序用ESP
+		MOV		EBX,[ESP+48]	; 应用程序用DS/SS
+		MOV		EBP,[ESP+52]	; tss.esp0的地址
+		MOV		[EBP  ],ESP		; 保存操作系统的ESP
+		MOV		[EBP+4],SS		; 保存操作系统的SS
+		MOV		ES,BX
+		MOV		DS,BX
+		MOV		FS,BX
+		MOV		GS,BX
+;	下面调整栈，以免用RETF跳转到应用程序
+		OR		ECX,3			; 将应用程序用段号和3进行OR运算
+		OR		EBX,3			; 将应用程序用段号和3进行OR运算
+		PUSH	EBX				; 应用程序的SS
+		PUSH	EDX				; 应用程序的ESP
+		PUSH	ECX				; 应用程序的CS
+		PUSH	EAX				; 应用程序的EIP
+		RETF
+;	应用程序结束后不会回到这里
+

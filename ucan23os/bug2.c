@@ -1,0 +1,4 @@
+void UcanMain(void)
+{
+	for (;;) { }
+}
